@@ -129,6 +129,9 @@
   <ItemGroup>
     <ClCompile Include="src\win32_comet.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\basewin.h" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
