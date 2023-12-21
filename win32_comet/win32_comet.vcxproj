@@ -127,10 +127,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="src\win32_comet.cpp" />
+    <ClInclude Include="src\basewin.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\basewin.h" />
+    <ClCompile Include="src\win32_comet.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

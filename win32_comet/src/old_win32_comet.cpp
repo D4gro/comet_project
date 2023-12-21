@@ -2,35 +2,14 @@
 #ifndef UNICODE
 #define UNICODE
 #endif // !UNICODE
-#include <windows.h>
-#include <D2d1.h>
-#include <assert.h>
-#include <atlbase.h>
 
+#include <Windows.h>
+
+#include <d2d1.h>
 #pragma comment(lib, "d2d1")
 
 #include <ShObjIdl.h> // COM. open dialog box ex.
 
-#include "basewin.h"
-#include "scene.h"
-
-struct Scene : public GraphicsScene
-{
-	CComPtr<ID2D1SolidColorBrush> m_pFill;
-	CComPtr<ID2D1SolidColorBrush> m_pStroke;
-
-	D2D1_ELLIPSE m_ellipse;
-	D2D_POINT_2F m_ticks[24];
-
-	HRESULT createDeviceIndependentResources() { return S_OK; }
-	void discardDeviceIndependentResources() { }
-	HRESULT createDeviceDependentResources();
-	void discardDeviceDependentResources();
-	void calculateLayout();
-	void renderScene();
-
-	void 
-};
 
 HWND hwnd;
 HANDLE hTimer = NULL;
