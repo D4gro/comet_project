@@ -131,7 +131,7 @@
     <ClInclude Include="src\scene.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\win32_comet.cpp" />
+    <ClCompile Include="src\win32_mouse_comet.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
