@@ -27,7 +27,7 @@ struct BaseWindow
 
 		if (pThis)
 		{
-			return pThis->HandleMessage(uMsg, wParam, lParam);
+			return pThis->handleMessage(uMsg, wParam, lParam);
 		}
 		else
 		{
@@ -46,10 +46,10 @@ struct BaseWindow
 		int nWidth = CW_USEDEFAULT,
 		int nHeight = CW_USEDEFAULT,
 		HWND hwndParent = 0,
-		HMENU hmenu = 0
+		HMENU hMenu = 0
 	)
 	{
-		WNDCLASS wc = {};
+		WNDCLASS wc = {0};
 
 		wc.lpfnWndProc = T::window_proc;
 		wc.hInstance = GetModuleHandle(NULL);
@@ -57,7 +57,7 @@ struct BaseWindow
 
 		RegisterClass(&wc);
 
-		m_hwnd = CreateWindowEx();
+		m_hwnd = CreateWindowEx(dwExStyle, className(), lpWindowName, dwStyle, x, y, nWidth, nHeight, hwndParent, hMenu, GetModuleHandle(NULL), this);
 
 		return (m_hwnd ? TRUE : FALSE);
 	}
@@ -66,10 +66,12 @@ struct BaseWindow
 		return m_hwnd;
 	}
 
-protected:
-
-	virtual wchar_t className() const = 0;
-	virtual LRESULT window_proc(UINT uMsg, WPARAM wParam, LPARAM lparam) = 0;
 
 	HWND m_hwnd;
+
+protected:
+
+	virtual const wchar_t* className() const = 0;
+	virtual LRESULT handleMessage(UINT uMsg, WPARAM wParam, LPARAM lparam) = 0;
+
 };
