@@ -12,8 +12,11 @@
 
 #include <ShObjIdl.h> // COM. open dialog box ex.
 
+#include <list>
+#include <memory>
+
+
 #include "basewin.h"
-#include "scene.h"
 
 template <typename T> void safe_release(T** ppT)
 {
@@ -26,38 +29,88 @@ template <typename T> void safe_release(T** ppT)
 
 struct DPIScale
 {
-	static float scaleX;
-	static float scaleY;
-
-	static void initialize(ID2D1Factory* pFactory)
+	static float scale;
+	
+	static void initialize(HWND hwnd)
 	{
-		float dpiX = (float)GetDpiForWindow(GetDesktopWindow());
-		float dpiY = dpiX;
+		float dpiX = GetDpiForWindow(hwnd);
 		
-//		pFactory->GetDesktopDpi(&dpiX, &dpiY);
-		scaleX = dpiX / 96.0f;
-		scaleY = dpiY / 96.0f;
+		scale = dpiX / 96.0f;
 	}
 
 	template <typename T>
 	static D2D1_POINT_2F pixelsToDips(T x, T y)
 	{
-		return D2D1::Point2F(static_cast<float>(x) / scaleX, static_cast<float>(y) / scaleY);
+		return D2D1::Point2F(static_cast<float>(x) / scale, static_cast<float>(y) / scale);
+	}
+
+	template <typename T>
+	static float pixelsToDipsX(T x)
+	{
+		return static_cast<float>(x) / scale;
+	}
+
+	template <typename T>
+	static float pixelsToDipsY(T y)
+	{
+		return static_cast<float>(y) / scale;
 	}
 };
 
-float DPIScale::scaleX = 1.0f;
-float DPIScale::scaleY = 1.0f;
+float DPIScale::scale = 1.0f;
 
+struct NDXEllipse
+{
+	D2D1_ELLIPSE ellipse;
+	D2D1_COLOR_F color;
+
+	void draw(ID2D1RenderTarget* pRT, ID2D1SolidColorBrush* pBrush)
+	{
+		pBrush->SetColor(color);
+		pRT->FillEllipse(ellipse, pBrush);
+		pBrush->SetColor(D2D1::ColorF(0, 0, 0));
+		pRT->DrawEllipse(ellipse, pBrush, 1.0f);
+	}
+
+	BOOL hitTest(float x, float y)
+	{
+		const float erx = ellipse.radiusX;
+		const float ery = ellipse.radiusY;
+		const float epx = erx - ellipse.point.x;
+		const float epy = ery - ellipse.point.y;
+		const float h = ((epx * epx) / (erx * erx)) + ((epy * epy) / (ery * ery));
+		return h <= 1.0f;
+	}
+};
+
+D2D1::ColorF::Enum colors[] = {
+	D2D1::ColorF::Violet,
+	D2D1::ColorF::Azure,
+	D2D1::ColorF::Crimson
+};
 
 struct MainWindow : BaseWindow<MainWindow>
 {
 
+	enum Mode
+	{
+		DrawMode,
+		SelectMode,
+		DragMode
+	};
+
+	HCURSOR hCursor;
 	ID2D1Factory* pFactory;
 	ID2D1HwndRenderTarget* pRenderTarget;
 	ID2D1SolidColorBrush* pBrush;
 	D2D1_ELLIPSE ellipse;
 	D2D1_POINT_2F ptMouse;
+
+	Mode mode;
+	size_t nextColor;
+
+	std::list<std::shared_ptr<NDXEllipse>> ellipses;
+	std::list<std::shared_ptr<NDXEllipse>>::iterator _selection;
 
 	void calculateLayout() {}
 	HRESULT createGraphicsResources();
@@ -67,13 +120,7 @@ struct MainWindow : BaseWindow<MainWindow>
 	void onLButtonDown(int pixelX, int pixelY, DWORD flags);
 	void onLButtonUp();
 	void onMouseMove(int pixelX, int pixelY, DWORD flags);
-
-	MainWindow() : pFactory(NULL), pRenderTarget(NULL), pBrush(NULL),
-		ellipse(D2D1::Ellipse(D2D1::Point2F(), 0, 0)),
-		ptMouse(D2D1::Point2F())
-	{
-
-	}
+	void onKeyDown(size_t vKey);
 
 
 	const wchar_t* className() const {
@@ -81,6 +128,35 @@ struct MainWindow : BaseWindow<MainWindow>
 	}
 
 	LRESULT handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam);
+
+	std::shared_ptr<NDXEllipse> selection()
+	{
+		if (_selection == ellipses.end())
+		{
+			return nullptr;
+		}
+		else
+		{
+			return (*_selection);
+		}
+	}
+
+	void clearSelection()
+	{
+		_selection = ellipses.end();
+	}
+
+	HRESULT insertEllipse(float x, float y);
+	BOOL hitTest(float x, float y);
+	void setMode(Mode mode);
+	void moveSelection(float x, float y);
+
+	MainWindow() : pFactory(NULL), pRenderTarget(NULL), pBrush(NULL),
+		ellipse(D2D1::Ellipse(D2D1::Point2F(), 0, 0)),
+		ptMouse(D2D1::Point2F()), nextColor(0), _selection(ellipses.end())
+	{
+
+	}
 };
 
 const wchar_t WINDOW_NAME[] = L"Mouse ExWindow";
@@ -131,7 +207,18 @@ void MainWindow::onPaint()
 
 		pRenderTarget->BeginDraw();
 		pRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::Azure));
-		pRenderTarget->FillEllipse(ellipse, pBrush);
+
+		for (auto i = ellipses.begin(); i != ellipses.end(); i++)
+		{
+			(*i)->draw(pRenderTarget, pBrush);
+		}
+
+		if (selection())
+		{
+			pBrush->SetColor(D2D1::ColorF(D2D1::ColorF::BlueViolet));
+			pRenderTarget->DrawEllipse(selection()->ellipse, pBrush, 2.0f);
+		}
+
 
 		hr = pRenderTarget->EndDraw();
 		if (FAILED(hr) || D2DERR_RECREATE_TARGET)
@@ -153,40 +240,98 @@ void MainWindow::resize()
 		D2D1_SIZE_U size = D2D1::SizeU(rect.right, rect.bottom);
 
 		pRenderTarget->Resize(size);
-		calculateLayout();
+		
 		InvalidateRect(hwnd, NULL, FALSE);
 	}
 }
 
 void MainWindow::onLButtonDown(int pixelX, int pixelY, DWORD flags)
 {
-	SetCapture(hwnd);
-	ellipse.point = ptMouse = DPIScale::pixelsToDips(pixelX, pixelY);
-	ellipse.radiusX = ellipse.radiusY = 1.0f;
+	const float dipX = DPIScale::pixelsToDipsX(pixelX);
+	const float dipY = DPIScale::pixelsToDipsY(pixelY);
+
+	if (mode == DrawMode)
+	{
+		POINT point = { pixelX, pixelY };
+
+		if (DragDetect(hwnd, point))
+		{
+			SetCapture(hwnd);
+			insertEllipse(dipX, dipY);
+		}
+	}
+	else
+	{
+		clearSelection();
+
+		if (hitTest(dipX, dipY))
+		{
+			SetCapture(hwnd);
+
+			ptMouse = selection()->ellipse.point;
+			ptMouse.x -= dipX;
+			ptMouse.y -= dipY;
+
+			setMode(DragMode);
+		}
+	}
 	InvalidateRect(hwnd, NULL, FALSE);
 }
 
 void MainWindow::onMouseMove(int pixelX, int pixelY, DWORD flags)
 {
-	if (flags & MK_LBUTTON)
+	const float dipX = DPIScale::pixelsToDipsX(pixelX);
+	const float dipY = DPIScale::pixelsToDipsY(pixelY);
+
+	if ((flags & MK_LBUTTON) && selection())
 	{
-		const D2D1_POINT_2F dips = DPIScale::pixelsToDips(pixelX, pixelY);
+		if (mode == DrawMode)
+		{
+			const float width = (dipX - ptMouse.x) / 2;
+			const float height = (dipY - ptMouse.y) / 2;
+			const float x1 = ptMouse.x + width;
+			const float y1 = ptMouse.y + height;
 
-		const float width = (dips.x - ptMouse.x) / 2;
-		const float height = (dips.y - ptMouse.y) / 2;
-		const float x1 = ptMouse.x + width;
-		const float y1 = ptMouse.y + height;
-
-		ellipse = D2D1::Ellipse(D2D1::Point2F(x1, y1), width, height);
+			selection()->ellipse = D2D1::Ellipse(
+				D2D1::Point2F(x1, y1), width, height
+			);
+		}
+		else if (mode == DragMode)
+		{
+			selection()->ellipse.point.x = dipX + ptMouse.x;
+			selection()->ellipse.point.y = dipY + ptMouse.y;
+		}
 		InvalidateRect(hwnd, NULL, FALSE);
 	}
 }
 
 void MainWindow::onLButtonUp()
 {
+	if ((mode == DragMode) && selection())
+	{
+		clearSelection();
+		InvalidateRect(hwnd, NULL, FALSE);
+	}
+	else if (mode == DrawMode)
+	{
+		setMode(SelectMode);
+	}
 	ReleaseCapture();
 }
 
+void MainWindow::onKeyDown(size_t vKey)
+{
+	switch (vKey)
+	{
+	case VK_BACK:
+	case VK_DELETE:
+		if ((mode == SelectMode) && selection())
+		{
+			ellipses.erase(_selection);
+
+		};
+	}
+}
 
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, wchar_t* pCmdLine, int nCmdShow)
@@ -195,18 +340,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, wchar_t* pCmdL
 
 	MainWindow win;
 
-	if (!win.create(L"LeMouse", WS_OVERLAPPEDWINDOW))
+	if (!win.create(L"Maousey Circles", WS_OVERLAPPEDWINDOW))
 	{
 		return 0;
 	}
+
+	HACCEL hAccel = LoadAccelerators(hInstance, MAKEINTRESOURCE(IDR_ACCEL1));
 
 	ShowWindow(win.hwnd, nCmdShow);
 
 	MSG msg = {};
 	while (GetMessage(&msg, NULL, 0, 0))
 	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+		if (!TranslateAccelerator(win.hwnd, hAccel, &msg))
+		{
+			TranslateMessage(&msg);
+			DispatchMessage(&msg);
+		}
 	}
 
 	return 0;
@@ -222,7 +372,7 @@ LRESULT MainWindow::handleMessage(UINT uMsg, WPARAM wParam, LPARAM lParam)
 		{
 			return -1;
 		}
-		DPIScale::initialize(pFactory);
+		DPIScale::initialize(hwnd);
 		return 0;
 
 	case WM_DESTROY:
